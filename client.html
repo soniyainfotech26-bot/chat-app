@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Chat Test</title>
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+
+  <style>
+  body {
+    font-family: Arial, Helvetica, sans-serif;
+    background: #f4f6f8;
+    margin: 0;
+    padding: 0;
+  }
+  .hidden {
+  display: none;
+}
+#roomList li {
+  list-style: none;
+  padding: 8px;
+  margin: 6px 0;
+  background: #f1f5f9;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+#roomList li:hover {
+  background: #e2e8f0;
+}
+  h1 {
+    text-align: center;
+    margin-top: 20px;
+  }
+
+  button {
+    padding: 8px 14px;
+    background: #4f46e5;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+  }
+
+  button:hover {
+    background: #4338ca;
+  }
+
+  input {
+    width: 100%;
+    padding: 8px;
+    margin: 6px 0;
+    border-radius: 5px;
+    border: 1px solid #ccc;
+  }
+
+  .container {
+    max-width: 400px;
+    margin: 20px auto;
+    background: white;
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+  }
+
+  #chatBox {
+    max-width: 500px;
+    margin: 20px auto;
+    background: white;
+    border-radius: 8px;
+    display: none;
+    box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+  }
+
+  #chatHeader {
+    padding: 10px;
+    background: #4f46e5;
+    color: white;
+    border-radius: 8px 8px 0 0;
+    text-align: center;
+  }
+
+  #messages {
+    list-style: none;
+    padding: 10px;
+    height: 300px;
+    overflow-y: auto;
+    border-bottom: 1px solid #eee;
+  }
+
+  #messages li {
+    margin-bottom: 8px;
+    padding: 6px 10px;
+    background: #f1f5f9;
+    border-radius: 5px;
+    font-size: 14px;
+  }
+
+  #messageArea {
+    display: flex;
+    padding: 10px;
+    gap: 8px;
+  }
+
+  #message {
+    flex: 1;
+  }
+
+  .action-buttons {
+    text-align: center;
+    margin-top: 20px;
+  }
+
+  #authForm, #signupForm {
+    display: none;
+  }
+</style>
+
+</head>
+<body>
+
+  <div class="container action-buttons">
+  <button onclick="showGuestLogin()">Guest Login</button>
+  <button onclick="showAuthLogin()">Login</button>
+  <button onclick="showSignup()">Sign Up</button>
+</div>
+
+<div class="container" id="authForm">
+  <h3>Login</h3>
+  <input id="email" placeholder="Email" />
+  <input id="password" type="password" placeholder="Password" />
+  <button onclick="authLogin()">Login</button>
+</div>
+
+<div class="container" id="roomForm" >
+  <h3>Room Creation</h3>
+  <input id="romeName" placeholder="Name of the Room" />
+  <button onclick="createRoom()">Create Room</button>
+</div>
+
+<div class="container" id="roomListForm">
+  <h3>Join Room</h3>
+</div>
+
+<div class="container" id="signupForm">
+  <h3>Sign Up</h3>
+  <input id="signupEmail" placeholder="Email" />
+  <input id="signupPassword" type="password" placeholder="Password" />
+  <input id="signupUsername" placeholder="Username"/>
+  <button onclick="signup()">Create Account</button>
+</div>
+
+
+  <!-- CHAT SECTION -->
+<div id="chatBox">
+  <div id="chatHeader">
+    Room: <span id="roomLabel"></span>
+  </div>
+
+  <ul id="messages"></ul>
+
+  <div id="messageArea">
+    <input id="message" placeholder="Type message..." />
+    <input id="message_user" type="hidden" />
+    <button onclick="sendMessage()">Send</button>
+  </div>
+</div>
+  <script>
+    let socket;
+    let token;
+    let roomId;
+
+    document.addEventListener("DOMContentLoaded", function () {
+        document.getElementById("chatBox").style.display = "none";
+        document.getElementById("roomForm").style.display = "none";
+        document.getElementById("roomListForm").style.display = "none";
+    });
+
+    function generateRoomId() {
+      return "room-" + Math.random().toString(36).substring(2, 10);
+    }
+
+    function hideAllForms() {
+      authForm.style.display = signupForm.style.display = "none";
+    }
+
+    function showGuestLogin() {
+      hideAllForms();
+      guestLogin();
+    }
+
+    function showAuthLogin() {
+      hideAllForms();
+      authForm.style.display = "block";
+    }
+
+    function showSignup() {
+      hideAllForms();
+      signupForm.style.display = "block";
+    }
+
+    // 🔹 Guest Login
+    async function guestLogin() {
+      const res = await fetch("http://localhost:3000/api/auth/guest", {
+        method: "POST"
+      });
+      const data = await res.json();
+      document.getElementById('message_user').value = data.senderId;
+      afterLogin(data.token);
+    }
+
+    // 🔹 Auth Login
+    async function authLogin() {
+      const email = document.getElementById('email').value;
+      const password = document.getElementById('password').value;
+
+      const res = await fetch("http://localhost:3000/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password })
+      });
+
+      const data = await res.json();
+     document.getElementById('message_user').value = data.senderId;
+
+      afterLogin(data.token);
+    }
+
+    // 🔹 Signup
+    async function signup() {
+      const email = signupEmail.value;
+      const password = signupPassword.value;
+      const username = signupUsername.value;
+
+      const res = await fetch("http://localhost:3000/api/auth/signup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password,username })
+      });
+
+      const data = await res.json();
+      alert("Signup successful. Please login.");
+      showAuthLogin();
+    }
+
+    async function createRoom() {
+      const name = romeName.value;
+
+      const res = await fetch("http://localhost:3000/api/rooms", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name })
+      });
+
+      const data = await res.json();
+       
+
+      alert("Room Created successfull");
+    }
+
+   function addRoomToUI(room) {
+  const li = document.createElement("li");
+  li.textContent = room.name;
+
+  li.addEventListener("click", () => {
+    if (!socket || !socket.connected) {
+      alert("Socket not connected yet");
+      return;
+    }
+    
+    joinRoom(room);
+  });
+
+  document.getElementById("roomListForm").appendChild(li);
+}
+
+  
+  function joinRoom(room) {
+  roomId = room._id;
+  roomLabel.innerText = room.name;
+  document.getElementById("messages").innerHTML = "";
+  socket.emit("joinRoom", roomId);
+}
+
+
+    // 🔹 After Login
+    function afterLogin(jwtToken,username) {
+        document.querySelector(".action-buttons").classList.add("hidden");
+        token = jwtToken;
+        hideAllForms();
+        chatBox.style.display = "block";
+        roomListForm.style.display = "block"
+        connectSocket();
+    }
+
+    function connectSocket() {
+      socket = io("http://localhost:3000", {
+        auth: { token }
+      });
+
+      socket.on("connect", () => {
+        // socket.emit("joinRoom", roomId);
+      });
+
+     socket.on("createroom", (room) => {
+      addRoomToUI(room);
+    });
+
+
+
+socket.emit("roomHistory");
+socket.on("roomHistoryList", rooms => {
+  rooms.forEach(element => {
+    addRoomToUI(element);
+  });
+});
+socket.on("joinRoom", async (roomId) => {
+    socket.join(roomId);
+    console.log("roomId",roomId)
+    const streamKey = roomId;
+    const messages = await redis.xRange(
+    streamKey,
+    "-",
+    "+",
+    { COUNT: 50 }
+    );
+    console.log("messages",messages)
+    const formatted = messages.map(m => m.message);
+    socket.emit("chatHistory", formatted);
+});
+
+
+
+socket.on("chatHistory", (messages) => {
+  messages.forEach(msg => {
+    addMessage(msg);
+  });
+});
+
+
+
+socket.on("message", (msg) => {
+    addMessage(msg);
+});
+
+function addMessage(msg) {
+    const li = document.createElement("li");
+    li.innerText = `${msg.senderId}: ${msg.text}`;
+    document.getElementById("messages").appendChild(li);
+    }
+}
+
+function sendMessage() {
+    socket.emit("sendMessage", {
+        roomId,
+        text: message.value,
+        senderId:document.getElementById('message_user').value,
+    });
+    message.value = "";
+}
+  </script>
+
+</body>
+</html>
