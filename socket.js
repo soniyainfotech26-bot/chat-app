@@ -32,7 +32,7 @@ module.exports = (io) => {
 
     socket.on("sendMessage", async (data) => {
      io.to(data.roomId).emit("message", {
-       senderId: socket.user.username || socket.user.email,
+       senderId: socket.user.username || socket.user.email || data.senderId,
        text: data.text
       });
       await produceMessage(data);
