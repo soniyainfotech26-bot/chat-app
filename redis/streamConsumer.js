@@ -11,8 +11,8 @@ require("../config/db");
    await redis.xGroupCreate(
   streamKey,
   groupName,
-  '$',
-  { MKSTREAM: true }
+  '$', // read only new message . old are already in stream
+  { MKSTREAM: true } // create the group if not exist
 );
     console.log("Consumer group created");
   } catch (err) {
@@ -24,12 +24,12 @@ require("../config/db");
   }
 
   while (true) {
-    const response = await redis.xReadGroup(
-      groupName,
-      "consumer-1",
-      [{ key: streamKey, id: ">" }],
-      { COUNT: 10, BLOCK: 5000 }
-    );
+      const response = await redis.xReadGroup(
+        groupName,
+        "consumer-1",
+        [{ key: streamKey, id: ">" }], // > read only new message  , 0 read only pending message
+        { COUNT: 10, BLOCK: 5000 }
+      );
 
     if (!response) continue;
 
@@ -43,7 +43,7 @@ require("../config/db");
           text: data.text
         });
         // Save to DB here
-        await redis.xAck(streamKey, groupName, msg.id);
+        await redis.xAck(streamKey, groupName, msg.id); // xack message are still in pending
       }
     }
   }
